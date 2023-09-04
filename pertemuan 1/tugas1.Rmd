@@ -106,7 +106,7 @@ library(ggplot2)
 ggplot() + 
   geom_line(data = train, aes(x = Periode, y = USD, col = "Data Latih")) +
   geom_line(data = test, aes(x = Periode, y = USD, col = "Data Uji")) +
-  labs(x = "Periode Waktu", y = "Sales", color = "Legend") +
+  labs(x = "Periode Waktu", y = "Rupiah", color = "Legend") +
   scale_colour_manual(name="Keterangan:", breaks = c("Data Latih", "Data Uji"),
                       values = c("blue", "red")) + 
   theme_bw() + theme(legend.position = "bottom",
@@ -145,7 +145,7 @@ data.gab #forecast 24 periode ke depan
 Adapun plot data deret waktu dari hasil peramalan yang dilakukan adalah sebagai berikut.
 
 ```{r}
-ts.plot(datanew.ts, xlab="Time Period ", ylab="Rupiah", main= "SMA N=4 Data Sales")
+ts.plot(datanew.ts, xlab="Time Period ", ylab="Rupiah", main= "SMA N=4 Data Nilai Tukar")
 points(datanew.ts)
 lines(data.gab[,2],col="green",lwd=2)
 lines(data.gab[,3],col="red",lwd=2)
@@ -180,7 +180,7 @@ data.gab2
 Hasil pemulusan menggunakan metode DMA divisualisasikan sebagai berikut
 
 ```{r}
-ts.plot(datanew.ts, xlab="Time Period ", ylab="Rupiah", main= "DMA N=4 Data Sales")
+ts.plot(datanew.ts, xlab="Time Period ", ylab="Rupiah", main= "DMA N=4 Data Nilai Tukar")
 points(datanew.ts)
 lines(data.gab2[,3],col="green",lwd=2)
 lines(data.gab2[,6],col="red",lwd=2)
