@@ -1,0 +1,264 @@
+---
+title: "Pertemuan 2 - Regresi"
+author:
+- Much Fazrin Sepranjani Fatah
+output:
+  html_document:
+    theme: yeti
+    toc: true
+    toc_float: true
+  word_document: default
+  pdf_document: default
+---
+
+Pada pertemuan kali ini, analisis data deret waktu akan lebih membahas tentang regresi. Dalam regresi terdapat asumsi tidak adanya autokorelasi yang harus terpenuhi namun kerap kali autokorelasi muncul pada data deret waktu sehingga kali ini akan dilakukan penanganan autokorelasi pada model regresi sebagai bahan bahasan utamanya. Adapun, pengerjaan dimulai dengan panggil packages library untuk analisis data deret waktu dan regresi yang diperlukan sebagai berikut.
+
+```{r}
+library(dplyr)
+library(TTR)
+library(forecast)
+library(lmtest) #digunakan untuk uji formal pendeteksian autokorelasi
+library(orcutt) #untuk membuat model regresi Cochrane-Orcutt
+library(HoRM) #untuk membuat model regresi Hildreth-Lu
+```
+
+# Preprocessing
+
+Sebelum masuk ke analisis akan ada tahapan sebagai berikut.
+
+### Input Data
+
+Data yang digunakan dalam kesempatan kali ini adalah data emisi karbon co2 yang berasal dari link berikut "<https://www.kaggle.com/datasets/ggsri123/co2-emissions-from-fossil-fuels>" dan sudah dirapihkan terlebih dahulu dengan pemilihan negara amatan yaitu di amerika serikat (USA).
+
+```{r}
+#install.packages("rio") #install jika belum ada
+library(rio)
+data<- import("https://raw.githubusercontent.com/fax17/MPDW/main/pertemuan%202/data%20fossil.csv")
+head(data) #hanya menampilkan sebagian data paling awal
+data_fossil <- data[c(-1,-2)] #hanya mengambil peubah numeriknya
+head(data_fossil)
+```
+
+### Eksplorasi Data
+
+Selanjutnya dari data yang diperoleh akan dilakukan eksplorasi dan visualisasinya menggunakan matriks korelasi untuk melihat ada tidaknya hubungan antar peubahnya.
+
+```{r}
+library(corrplot)
+matriks <- cor(data_fossil)
+corrplot.mixed(matriks, upper = 'ellipse', lower = 'number', order = "original",
+               tl.col="black", tl.pos = "lt",diag = 'l',
+               number.digits=2, number.cex=0.55)
+```
+
+Hasil matriks korelasi menunjukan bahwa tiap peubah saling memiliki hubungan sehingga setalah mengetahui adanya hubungan antar peubah, maka model regresi dapat ditentukan. Pada percobaan Kali ini peneliti dengan sengaja ingin mengetahui hubungan linear berganda antar peubah bunker fuel sebagai respon (y) dan peubah yang mempengaruhinya yakni gass fuel (x1) dan gass flaring (x2). Bunker fuel sendiri merupakan data emisi karbin akibat bahan bakar bunker yang mana emisi kerap terjadi akibar pembakaran kapalnya sehingga ada co2 diudara, sementara itu gass fuel merupakan emisi karbon co2 hasil bahan bakar gas, dan gas flaring adalah emisi karbon co2 dari pembakaran gas non bahan bakar. Jadi pemilihan ini ingin mengetahui apakah emisi karbon co2 pembakaran bahan bakar bunker ini berhubungan atau bahkan dipengaruhi emisi karbon co2 akibat gas baik bahan bakar maupun pembakaran lainnya. Hal ini dicobakan karena peneliti memikirkan apakah jika emisi karbon yang terjadi di udara akibat gas meningkat berarti akibat bahan bakar bunkerjuga meningkat berhubungan akibat bahan bakar bunker ini juga sama saama akibat pembakaran yang hanya saja ini pembakaran yang biasa ada pada kapal. Lebih lanjut akan dilakukan pengujian regresi dan penanganannya.
+
+# Regresi
+
+### Pemodelan Regresi Linear Berganda
+
+```{r}
+#Pembuatan Model Regresi
+#model regresi
+model<- lm(`Bunker fuels (Not in Total)`~`Gas Fuel`+`Gas Flaring`, data = data_fossil)
+summary(model)
+cat("y = ", coef(model)[1], " + ", coef(model)[2]," x1",coef(model)[3]," x2", sep = "")
+```
+
+Model yang dihasilkan adalah $$y_i=-17.18989+0.1018224x_1-0.5437749x_2$$ Berdasarkan ringkasan model dapat diketahui bahwa hasil uji F memiliki *p-value* \< $\alpha$ (5%). Artinya, minimal terdapat satu variabel yang berpengaruh nyata terhadap model. Selanjutnya dapat dilihat juga nilai $R^2=0.6124$. Artinya, sebesar 61.24% keragaman nilai y dapat dijelaskan oleh peubah x nya. Hasil ini perlu kita uji terhadap sisaannya seperti berikut ini.
+
+### Pengujian Asumsi
+
+```{r}
+#sisaan dan fitted value
+sisaan<- residuals(model)
+fitValue<- predict(model)
+
+#Diagnostik dengan eksploratif
+par(mfrow = c(2,2))
+qqnorm(sisaan)
+qqline(sisaan, col = "steelblue", lwd = 2)
+plot(fitValue, sisaan, col = "steelblue", pch = 20, xlab = "Sisaan", ylab = "Fitted Values", main = "Sisaan vs Fitted Values")
+abline(a = 0, b = 0, lwd = 2)
+hist(sisaan, col = "steelblue")
+plot(seq(1,65,1), sisaan, col = "steelblue", pch = 20, xlab = "Sisaan", ylab = "Order", main = "Sisaan vs Order")
+lines(seq(1,65,1), sisaan, col = "red")
+abline(a = 0, b = 0, lwd = 2)
+```
+
+Dua plot di samping kiri digunakan untuk melihat apakah sisaan menyebar normal. Normal Q-Q Plot di atas menunjukkan bahwa sisaan cenderung menyebar normal, tetapi histogram dari sisaan tidak menunjukkan demikian. Selanjutnya, dua plot di samping kanan digunakan untuk melihat autokorelasi. Plot Sisaan vs *Fitted Value* dan Plot Sisaan vs *Order* menunjukkan adanya pola pada sisaan. Untuk lebih lanjut akan digunakan uji formal melihat normalitas sisaan dan plot ACF dan PACF untuk melihat apakah ada autokorelasi atau tidak.
+
+```{r}
+#Melihat Sisaan Menyebar Normal/Tidak
+#H0: sisaan mengikuti sebaran normal
+#H1: sisaan tidak mengikuti sebaran normal
+ks.test(sisaan, "pnorm", mean=mean(sisaan), sd=sd(sisaan))
+```
+
+Berdasarkan uji formal kolmogorov-Smirnov didapatkan nilai *p-value* \> $\alpha$ (5%). Artinya, cukup bukti untuk menyatakan sisaan berdistribusi normal.
+
+```{r}
+#ACF dan PACF identifikasi autokorelasi
+par(mfrow = c(1,2))
+acf(sisaan)
+pacf(sisaan)
+```
+
+Berdasarkan plot ACF dan PACF, terlihat seperti ada autokorelasi. Namun, untuk lebih memastikan akan dilakukan uji formal dengan uji Durbin Watson.
+
+```{r}
+#Deteksi autokorelasi dengan uji-Durbin Watson
+#H0: tidak ada autokorelasi
+#H1: ada autokorelasi
+dwtest(model)
+```
+
+Berdasarkan hasil DW Test, didapatkan nilai $DW = 0.16641$ dan *p-value* \< $2.2e-16$. Berdasarkan tabel Durbin-Watson diperoleh nilai $DL = 1.5355$ dan $DU = 1.6621$. Nilai DW berada dibawah nilai DU. Artinya, berada di daerah autokorelasi positif. Selanjutnya, dengan nilai *p-value* \< 0.05 dapat disimpulkan bahwa tolak H0, cukup bukti mengatakan adanya autokorelasi. Oleh karena itu, diperlukan penangan autokorelasi. Penanganan yang akan digunakan menggunakan dua metode, yaitu Cochrane-Orcutt dan Hildret-Lu.
+
+# Penanganan Autokorelasi
+
+### Metode Cochrane-Orcutt
+
+Penanganan metode Cochrane-Orcutt dapat dilakukan dengan bantuan packages Orcutt pada aplikasi `R` maupun secara manual. Berikut ini ditampilkan cara menggunakan bantuan `library` *packages* `Orcutt`.
+
+```{r}
+#Penanganan Autokorelasi Cochrane-Orcutt
+modelCO<-cochrane.orcutt(model)
+modelCO
+```
+
+Hasil keluaran model setelah dilakukan penanganan adalah sebagai berikut. $$y_i=-2779.621296+0.0956455x_1+0.186458x_2$$ Hasil juga menunjukkan bahwa nilai DW dan p-value meningkat menjadi $1.88284$ dan $0.2878$. Nilai DW sudah berada pada rentang DU \< DW \< 4-DU. Hal tersebut juga didukung dengan nilai *p-value* \> 0.05, artinya belum cukup bukti menyatakan bahwa sisaan terdapat autokorelasi pada taraf nyata 5%. Untuk nilai $ρ ̂$ optimum yang digunakan adalah $0.935292$. Nilai tersebut dapat diketahui dengan *syntax* berikut.
+
+```{r}
+#Rho optimum
+rho<- modelCO$rho
+rho
+```
+
+Selanjutnya akan dilakukan transformasi atau penanganan autokorelasi secara manual dengan syntax berikut ini.
+
+```{r}
+#Transformasi Manual
+Bunker.trans<- data_fossil$`Bunker fuels (Not in Total)`[-1]-data_fossil$`Bunker fuels (Not in Total)`[-65]*rho
+Gasfuel.trans<- data_fossil$`Gas Fuel`[-1]-data_fossil$`Gas Fuel`[-65]*rho
+Gasflaring.trans <- data_fossil$`Gas Flaring`[-1]-data_fossil$`Gas Flaring`[-65]*rho
+modelCOmanual<- lm(Bunker.trans~Gasfuel.trans+Gasflaring.trans)
+summary(modelCOmanual)
+```
+
+Hasil model transformasi bukan merupakan model sesungguhnya. Koefisien regresi masih perlu dicari kembali mengikuti $β_0^*=β_0+ρ ̂β_0$ dan $β_1^*=β_1$.
+
+```{r}
+#Mencari Penduga Koefisien Regresi setelah Transformasi ke Persamaan Awal
+b0bintang <- modelCOmanual$coefficients[-c(2,3)]
+b0 <- b0bintang/(1-rho)
+b1 <- modelCOmanual$coefficients[-c(1,3)]
+b2 <- modelCOmanual$coefficients[-c(1,2)]
+
+cat("y = ", b0, " + ", b1," x1", " + ",b2," x2", sep = "")
+
+```
+
+Hasil perhitungan koefisien regresi tersebut akan menghasilkan hasil yang sama dengan model yang dihasilkan menggunakan *packages*.
+
+### Metode Hildreth-Lu
+
+Penanganan kedua adalah menggunakan metode Hildreth-Lu. Metode ini akan mencari nilai SSE terkecil dan dapat dicari secara manual maupun menggunakan packages. Jika menggunakan packages, gunakan `library` *packages* `HORM`.
+
+```{r}
+
+#Penanganan Autokorelasi Hildreth lu
+# Hildreth-Lu
+hildreth.lu.func.multi<- function(r, model){
+  x <- model.matrix(model)[,-1]
+  y <- model.response(model.frame(model))
+  n <- length(y)
+  t <- 2:n
+  y <- y[t]-r*y[t-1]
+  
+  # Modifikasi untuk beberapa variabel bebas
+  x1 <- x[,1][t]-r*x[,1][t-1]
+  x2 <- x[,2][t]-r*x[,2][t-1]
+  
+  return(lm(y~x1+x2))
+}
+
+```
+
+```{r}
+# Pencarian rho yang meminimumkan SSE
+rho <- c(seq(0.1,1, by= 0.1))
+tab <- data.frame("rho" = rho, "SSE" = sapply(rho, function(i){deviance(hildreth.lu.func.multi(i, model))}))
+round(tab,1)
+
+```
+
+Pertama-tama akan dicari di mana kira-kira $ρ$ yang menghasilkan SSE minimum. Pada hasil di atas terlihat $ρ$ minimum ketika 0.9. Namun, hasil tersebut masih kurang teliti sehingga akan dicari kembali $ρ$ yang lebih optimum dengan ketelitian yang lebih. Jika sebelumnya jarak antar $ρ$ yang dicari adalah 0.1, kali ini jarak antar $ρ$ adalah 0.00001 dan dilakukan pada selang 0.9 sampai dengan 1.
+
+```{r}
+#Rho optimal di sekitar 0.9
+rOpt <- seq(0.9,1, by= 0.00001)
+tabOpt <- data.frame("rho" = rOpt, "SSE" = sapply(rOpt, function(i){deviance(hildreth.lu.func.multi(i, model))}))
+head(tabOpt[order(tabOpt$SSE),])
+```
+
+```{r}
+#Grafik SSE optimum
+par(mfrow = c(1,1))
+plot(tab$SSE ~ tab$rho , type = "l", xlab = "Rho", ylab = "SSE")
+abline(v = tabOpt[tabOpt$SSE==min(tabOpt$SSE),"rho"], lty = 2, col="red",lwd=2)
+text(x=0.93529, y=520050663, labels = "rho=0.93529", cex = 0.99)
+```
+
+Perhitungan yang dilakukan aplikasi `R` menunjukkan bahwa nilai $ρ$ optimum, yaitu saat SSE terkecil terdapat pada nilai $ρ=0.93529$. Hal tersebut juga ditunjukkan pada plot. Selanjutnya, model dapat didapatkan dengan mengevaluasi nilai $ρ$ ke dalam fungsi `hildreth.lu.func`, serta dilanjutkan dengan pengujian autokorelasi dengan uji Durbin-Watson. Namun, setelah pengecekan tersebut tidak lupa koefisien regresi tersebut digunakan untuk transformasi balik. Persamaan hasil transformasi itulah yang menjadi persamaan sesungguhnya.
+
+```{r}
+#Model terbaaaik
+modelHL <- hildreth.lu.func.multi(0.93529, model)
+summary(modelHL)
+
+#Transformasi Balik
+cat("y = ", coef(modelHL)[1]/(1-0.93529), " + ", coef(modelHL)[2]," x1", " + ",coef(modelHL)[3]," x2", sep = "")
+```
+
+Setelah dilakukan tranformasi balik, didapatkan model dengan metode Hildreth-Lu sebagai berikut. $$y_i=-2619.329 + 0.09564552x_1 +0.1864518x_2$$
+
+```{r}
+#Deteksi autokorelasi
+lmtest::dwtest(modelHL, alternative = 'two.sided')
+
+```
+
+Hasil uji Durbin-Watson juga menunjukkan bawah nilai DW sebesar $1.8828$ berada pada selang daerah tidak ada autokorelasi, yaitu pada rentang DU \< DW \< 4-DU. Hal tersebut juga didukung oleh *p-value* sebesar $0.5756$, di mana *p-value* \> $\alpha$=5%. Artinya tak tolak $H_0$ atau belum cukup bukti menyatakan bahwa ada autokorelasi dalam data nilai IPM dengan metode Hildreth-Lu pada taraf nyata 5%.
+
+Terakhir, akan dibandingkan nilai SSE dari ketiga metode (metode awal, metode Cochrane-Orcutt, dan Hildreth-Lu).
+
+```{r}
+#Perbandingan
+sseModelawal <- anova(model)$`Sum Sq`[-c(1,2)]
+sseModelCO <- anova(modelCOmanual)$`Sum Sq`[-c(1,2)]
+sseModelHL <- anova(modelHL)$`Sum Sq`[-c(1,2)]
+mseModelawal <- sseModelawal/length(Bunker.trans)
+mseModelCO <- sseModelCO/length(Bunker.trans)
+mseModelHL <- sseModelHL/length(Bunker.trans)
+
+akurasi <- matrix(c(sseModelawal,sseModelCO,sseModelHL,
+                    mseModelawal,mseModelCO,mseModelHL),nrow=2,ncol=3,byrow = T)
+colnames(akurasi) <- c("Model Awal", "Model Cochrane-Orcutt", "Model Hildreth-Lu")
+row.names(akurasi) <- c("SSE","MSE")
+akurasi
+```
+
+Berdasarkan hasil tersebut dapat diketahui bahwa hasil penanganan autokorelasi dengan metode Cochrane-Orcutt dan Hildreth-Lu memiliki SSE yang sama, sebesar $520050663$ dan lebih baik dibandingkan model awal ketika autokorelasi masih terjadi, yaitu sebesar \$3381549788 (ingat dalam SSE maupun MSE, semakin kecil nilainya semakin baik).
+
+# Simpulan
+
+Autokorelasi yang terdapat pada data yang dianalisis terjadi akibat adanya korelasi di antara unsur penyusunnya. Indikator bunker fuel yang erat hubungannya dengan gas (fuel & flaring) sangat rawan menjadi penyebab adanya autokorelasi. Adanya autokorelasi menyebabkan model regresi kurang baik karena akan meingkatkan galatnya. Autokorelasi dapat dideteksi secara eksploratif melalui plot sisaan, ACF, dan PACF, serta dengan uji formal Durbin-Watson. Kemudian, autokorelasi tersebut dapat ditangani dengan metode Cochrane-Orcutt dan Hildreth-Lu. Kedua metode menghasilkan nilai SSE yang sama dan lebih kecil dari model awalnya, artinya keduanya baik untuk digunakan.
+
+## Daftar Pustaka
+
+Aprianto A, Debataraja NN, Imro'ah N. 2020. Metode cochrane-orcutt untuk mengatasi autokorelasi pada estimasi parameter ordinary least squares. *Bimaster : Buletin Ilmiah Matematika, Statistika dan Terapannya*. 9(1):95--102. <doi:10.26418/bbimst.v9i1.38590>.
+
+BPS. 2021a. *Indeks Pembangunan Manusia 2020*. Jakarta (ID): Badan Pusat Statistik.
+
+BPS. 2021b. Indeks Pembangunan Manusia (IPM) 2021. *Berita Resmi Statistik*., siap terbit.
