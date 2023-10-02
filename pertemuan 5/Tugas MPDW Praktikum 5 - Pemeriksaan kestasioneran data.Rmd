@@ -1,0 +1,245 @@
+---
+title: "Tugas MPDW Praktikum 5 : Pemeriksaan kestasioneran data"
+author: "Much. Fazrin SF"
+date: "`r Sys.Date()`"
+output: 
+    rmdformats::readthedown: 
+      theme: yeti
+      toc: 6
+      toc_float: TRUE
+---
+
+Kali ini akan dilakukan pengecekan kestasioneran data baik itu secara rataan maupun ragam. Disini akan menekankan bagaimana kita dapat mengetahui suatu data stasioner atau tidaknya. Dilakukan pula partisi untuk mengecek kestasioneran sebagian data dari data yang dibawakan.
+
+```{r}
+#library yang digunakan
+library(ggplot2)
+library(tsibble)
+library(tseries)
+library(MASS)
+```
+## Kestasioneran Data Asli
+
+Pada tahap ini data asli milik pribadi peneliti berupa data time series bulanan menganai kurs uang dalam usd akan diteliti kestasionerannya. Data sendiri ada di github pribadi peneliti.
+
+```{r}
+df<- rio::import("https://raw.githubusercontent.com/fax17/MPDW/main/data/data.csv")
+df
+data <- df[,-2] #menghapus kolom bulan yg tidak diperlukan disini
+ts <- ts(data$USD)
+```
+
+### Plot *Time Series*
+
+```{r}
+library(ggplot2)
+plot_ts <- ts.plot(ts, xlab="Time Period ", ylab="", 
+        main = "Time Series Plot")
+points(ts)
+```
+
+Plot deret waktu di atas menunjukkan bahwa data cenderung membuat grafik tren, dan tidak stasioner dalam rataan maupun ragamnya .
+
+### Plot ACF
+
+```{r}
+acf(ts)
+```
+
+Berdasarkan plot ACF, terlihat bahwa plot ACF pada data tersebut cenderung *tails off* slowly yang artinya mengindikasikan tidak stasioner dalam rataannya.
+
+### Uji ADF
+
+```{r}
+library(tseries)
+adf.test(ts)
+```
+
+$H_0$ : Data tidak stasioner dalam rataan
+
+$H_1$ : Data stasioner dalam rataan
+
+Berdasarkan uji ADF tersebut, didapat *p-value* sebesar 0.3305 yang lebih besar dari taraf nyata 5% sehingga tak tolak $H_0$ dan menandakan bahwa data tidak stasioner dalam rataan . Hal ini sesuai dengan hasil eksplorasi data. .
+
+### Plot Box-Cox
+
+```{r}
+index <- seq(1:271)
+bc = boxcox(ts~index, lambda = seq(0,4,by=0.01))
+```
+```{r}
+#Nilai Rounded Lambda
+lambda <- bc$x[which.max(bc$y)]
+lambda
+```
+```{r}
+#SK
+bc$x[bc$y > max(bc$y) - 1/2 * qchisq(.95,1)]
+```
+
+Gambar di atas menunjukkan nilai *rounded value* ($\lambda$) optimum sebesar **0,35** dan pada selang kepercayaan 95% nilai memiliki batas bawah **0,00** dan batas atas **0.97**. Selang tersebut tidak memuat nilai satu (**1**) sehingga dapat dikatakan bahwa data  tidak stasioner dalam ragam.
+
+## Kestasioneran Partisi Data
+
+Pada tahap ini akan dilakukan pengecekan kestasioneran data seabnyak 2 kali terhadap 2 partisi/bagian data yang pemilihannya subjektif dari keinginan peneliti dengan mengacu pemotongan dilakukan tidak ketiika hendak naik atau turunnya nilai data time series
+
+### Partisi pertama
+
+partisi pertama ini ingin dilihat ketika data seakan sebelum naik di plot data seluruhnya yakni dari amatan 1 hingga ke 120.
+
+```{r}
+partisits1 <- ts[1:120] |> ts()
+mean(partisits1)
+var(partisits1)
+```
+
+#### Plot Time Series
+
+```{r}
+partisits1 |> as_tsibble() |> 
+  ggplot(aes(x = index, y = value)) +
+  geom_line() + theme_bw() +
+  xlab("Obs") + ylab("Nilai")
+```
+
+Plot deret waktu di atas menunjukkan bahwa cenderus tidak stasioner dalam rataan, ditandai dengan data yang tidak menyebar di sekitar nilai tengahnya dandata terlihat tidak stasioner dalam ragam, hal ini ditandai dengan lebar pita yang cenderung berbeda pula.
+
+#### Plot ACF
+
+```{r}
+acf(partisits1)
+```
+
+Berdasarkan plot ACF, terlihat bahwa plot ACF pada data tersebut cenderung *tails off* slowly dan membentuk sinus yang artinya data tidak stastioner dalam rataan.
+
+#### Uji ADF
+
+```{r}
+adf.test(partisits1)
+```
+
+$H_0$ : Data tidak stasioner dalam rataan
+
+$H_1$ : Data stasioner dalam rataan
+
+Berdasarkan uji ADF tersebut, didapat *p-value* sebesar 0.1037 yang lebih besar dari taraf nyata 5% sehingga tak tolak $H_0$ dan menandakan bahwa data tidak stasioner dalam rataan. Hal ini sesuai dengan hasil eksplorasi menggunakan plot time series dan plot ACF.
+
+#### Plot Boxcox
+
+```{r}
+index1 <- seq(1:120)
+bc1 = boxcox(partisits1~index1, lambda = seq(-6,4,by=1))
+#Nilai Rounded Lambda
+lambda1 <- bc1$x[which.max(bc1$y)]
+lambda1
+#SK
+bc1$x[bc1$y > max(bc1$y) - 1/2 * qchisq(.95,1)]
+```
+
+Gambar di atas menunjukkan nilai *rounded value* ($\lambda$) optimum sebesar **-5** dan pada selang kepercayaan 95% nilai memiliki batas bawah **-5** dan batas atas **-3.454**. Selang tersebut tidak memuat nilai satu sehingga dapat dikatakan bahwa data tidak stasioner dalam ragam.
+
+### Partisi kedua
+
+partisi kedua ini ingin dilihat ketika data seakan  naik di plot data seluruhnya yakni dari amatan 126 hingga ke 175 sebanyak 50 amatan.
+
+```{r}
+partisits2 <- ts[126:175] |> ts()
+mean(partisits2)
+var(partisits2)
+
+#### Plot Time Series
+partisits2 |> as_tsibble() |> 
+  ggplot(aes(x = index, y = value)) +
+  geom_line() + theme_bw() +
+  xlab("Obs") + ylab("Nilai")
+```
+
+Plot deret waktu di atas menunjukkan bahwa data cenderung trend dan tidak stasioner dalam rataan, semntara untuk stasioner dalam ragamnya juga terlihat tidak terpenuhi.
+
+#### Plot ACF
+
+```{r}
+acf(partisits2)
+```
+
+Berdasarkan plot ACF, terlihat bahwa plot ACF pada data tersebut cenderung tails off. Berarti, belum stasioner.
+
+#### Uji ADF
+
+```{r}
+adf.test(partisits2)
+```
+
+$H_0$ : Data tidak stasioner dalam rataan
+
+$H_1$ : Data stasioner dalam rataan
+
+Berdasarkan uji ADF tersebut, didapat *p-value* sebesar 0.338 yang lebih besar dari taraf nyata 5% sehingga tak tolak $H_0$ dan menandakan bahwa data tidak stasioner dalam rataan. Hal ini sesuai dengan hasil eksplorasi menggunakan plot time series dan plot ACF.
+
+#### Plot Boxcox
+
+```{r}
+index2 <- seq(1:50)
+bc2 = boxcox(partisits2~index2, lambda = seq(-5,5,by=1))
+#Nilai Rounded Lambda
+lambda2 <- bc2$x[which.max(bc2$y)]
+lambda2
+#SK
+bc2$x[bc2$y > max(bc2$y) - 1/2 * qchisq(.95,1)]
+```
+
+Gambar di atas menunjukkan nilai *rounded value* ($\lambda$) optimum sebesar **-1.16** dan pada selang kepercayaan 95% nilai memiliki batas bawah **-2.37** dan batas atas **-0.05**. Selang tersebut tudak memuat nilai satu sehingga dapat dikatakan bahwa data tidak stasioner dalam ragam.
+
+### Partisi ketiga
+
+partisi ketiga ini adalah partisi tambahan dimana peneliti ingin melihat ketika data setelah  naik di plot data seluruhnya yakni dari amatan 211 hingga ke 260 sebanyak 50 amatan.
+
+```{r}
+partisits3 <- ts[211:260] |> ts()
+mean(partisits3)
+var(partisits3)
+
+#### Plot Time Series
+partisits3 |> as_tsibble() |> 
+  ggplot(aes(x = index, y = value)) +
+  geom_line() + theme_bw() +
+  xlab("Obs") + ylab("Nilai")
+```
+
+Plot deret waktu di atas menunjukkan bahwa data cenderung seakan stasioner dalam rataan, semntara untuk stasioner dalam ragamnya juga terlihat tidak terpenuhi.
+
+#### Plot ACF
+
+```{r}
+acf(partisits3)
+```
+
+Berdasarkan plot ACF, terlihat bahwa plot ACF pada data tersebut cut off pada lag pertama. Berarti ada indikasi data stasioner dalam rataan.
+
+#### Uji ADF
+
+```{r}
+adf.test(partisits3)
+```
+
+$H_0$ : Data tidak stasioner dalam rataan
+
+$H_1$ : Data stasioner dalam rataan
+
+Berdasarkan uji ADF tersebut, didapat *p-value* sebesar 0.08521 yang lebih besar dari taraf nyata 5% sehingga tak tolak $H_0$ dan menandakan bahwa data tidak stasioner dalam rataan. Hal ini tidak sesuai dengan hasil eksplorasi menggunakan plot time series dan plot ACF. Disini peneliti lebih memilih hasil plot yang berarti data stasioner dalam rataan. disni juga nilai adf hampir stasioner atau jika didekati dengan taraf nyata 5% maka akan tolak $H_0$ , inilah landasan peneliti menyatakan data stasioner dalam rataan.
+
+#### Plot Boxcox
+
+```{r}
+index3 <- seq(1:50)
+bc3 = boxcox(partisits3~index3, lambda = seq(-25,5,by=10))
+#Nilai Rounded Lambda
+lambda3 <- bc3$x[which.max(bc3$y)]
+lambda3
+#SK
+bc3$x[bc3$y > max(bc3$y) - 1/2 * qchisq(.95,1)]
+```
+
+Gambar di atas menunjukkan nilai *rounded value* ($\lambda$) optimum sebesar ** -20.757576** dan pada selang kepercayaan 95% nilai memiliki batas bawah **-2.37** dan batas atas **-6.515152**. Selang tersebut tudak memuat nilai satu sehingga dapat dikatakan bahwa data tidak stasioner dalam ragam.
+
+
